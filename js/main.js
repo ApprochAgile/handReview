@@ -1,5 +1,7 @@
+import { mountEditor } from './editor.js';
+
 const root = document.getElementById('app');
-const ROUTES = {};
+const ROUTES = { editor: mountEditor };
 let cleanup = null;
 
 function show(name, arg) {
