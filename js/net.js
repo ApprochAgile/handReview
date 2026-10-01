@@ -6,6 +6,7 @@ const RETRY_MS = 2000;
 const CONNECT_TIMEOUT_MS = 15000;
 const RECONNECT_MIN_MS = 2000;
 const RECONNECT_MAX_MS = 16000;
+const RECONNECT_CHECK_MS = 3000;
 const TRANSIENT_ERRORS = new Set(['network', 'socket-error', 'socket-closed', 'server-error', 'disconnected']);
 const PEER_OPTIONS = { debug: 0 };
 const PEER_MISSING = 'Bibliothèque PeerJS non chargée. Vérifie ta connexion internet.';
@@ -35,12 +36,14 @@ export function openHost({ onMessage, onClose, onStatus }) {
     let opened = false;
     let closing = false;
     let reconnectTimer = null;
+    let checkTimer = null;
     let reconnectDelay = RECONNECT_MIN_MS;
 
     const shutdown = () => {
       closing = true;
       clearTimeout(reconnectTimer);
-      reconnectTimer = null;
+      clearTimeout(checkTimer);
+      reconnectTimer = checkTimer = null;
       peer.destroy();
     };
     peer.on('open', (id) => {
@@ -61,6 +64,14 @@ export function openHost({ onMessage, onClose, onStatus }) {
         reconnectTimer = null;
         if (closing || peer.destroyed || !peer.disconnected) return;
         peer.reconnect();
+        // Le serveur ne renvoie pas toujours OPEN (id encore connu) : vérifie l'état soi-même.
+        clearTimeout(checkTimer);
+        checkTimer = setTimeout(() => {
+          checkTimer = null;
+          if (closing || peer.destroyed || peer.disconnected) return;
+          reconnectDelay = RECONNECT_MIN_MS;
+          onStatus(null);
+        }, RECONNECT_CHECK_MS);
       }, reconnectDelay);
       reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
     });
@@ -126,8 +137,13 @@ export function joinHost(hostId, { hello, onMessage, onStatus }) {
     conn = null;
     previous?.close();
     if (peer.disconnected) {
-      // La connexion vers l'hôte sera relancée sur 'open'.
+      // La connexion vers l'hôte sera relancée sur 'open', ou par cet essai si 'open'
+      // n'est pas réémis (id encore connu du serveur). Pas compté comme un échec.
       if (!peer.destroyed) peer.reconnect();
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        connect();
+      }, RETRY_MS);
       return;
     }
     const c = peer.connect(hostId, { reliable: true });

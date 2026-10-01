@@ -118,6 +118,7 @@ export function mountHost(root) {
     if (known && known !== clientId) return;
     if (!session.participants.some((p) => p.id === clientId) && session.participants.length >= MAX_PARTICIPANTS) {
       conn.send({ type: 'bye', reason: 'full' });
+      setTimeout(() => conn.close(), CLOSE_DELAY_MS);
       return;
     }
     // Onglet dupliqué : la nouvelle connexion remplace l'ancienne.
