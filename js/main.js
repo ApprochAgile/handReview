@@ -1,8 +1,9 @@
 import { mountEditor } from './editor.js';
 import { mountHost } from './host.js';
+import { mountVoter } from './voter.js';
 
 const root = document.getElementById('app');
-const ROUTES = { editor: mountEditor, host: mountHost };
+const ROUTES = { editor: mountEditor, host: mountHost, voter: mountVoter };
 let cleanup = null;
 
 function show(name, arg) {
