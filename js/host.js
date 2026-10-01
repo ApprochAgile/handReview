@@ -9,6 +9,9 @@ import { esc, storageGet, storageSet } from './dom.js';
 const REPLAY_DELAY_MS = 700;
 const HOST_ID = 'host';
 const NAME_KEY = 'reviewer.name';
+const MAX_PARTICIPANTS = 50;
+const MAX_CLIENT_ID_LENGTH = 32;
+const CLOSE_DELAY_MS = 300;
 
 export function mountHost(root) {
   let hand = null;
@@ -17,6 +20,7 @@ export function mountHost(root) {
   let banner = '';
   let closePeer = null;
   let timer = null;
+  let disposed = false;
   let hostName = storageGet('localStorage', NAME_KEY) ?? '';
   const connsById = new Map();
   const idsByConn = new Map();
@@ -34,13 +38,18 @@ export function mountHost(root) {
 
   renderSetup();
 
-  return () => {
+  const cleanup = () => {
+    disposed = true;
     clearTimeout(timer);
     sayBye();
-    closePeer?.();
+    // Laisse partir les messages `bye` avant de fermer le peer.
+    setTimeout(() => closePeer?.(), CLOSE_DELAY_MS);
     window.removeEventListener('beforeunload', onBeforeUnload);
     window.removeEventListener('pagehide', sayBye);
   };
+  // Demandé par main.js avant de quitter l'écran par navigation interne.
+  cleanup.confirmLeave = () => session !== null;
+  return cleanup;
 
   function renderSetup(error = '') {
     const voteCount = hand ? hand.actions.filter((a) => a.vote).length : 0;
@@ -57,6 +66,7 @@ export function mountHost(root) {
       const file = e.target.files[0];
       if (!file) return;
       const result = parseHand(await file.text());
+      if (disposed) return;
       hand = result.hand;
       renderSetup(result.error ?? '');
     });
@@ -72,30 +82,59 @@ export function mountHost(root) {
     button.disabled = true;
     button.textContent = 'Connexion…';
     try {
-      const host = await openHost({ onMessage, onClose, onError: (message) => { banner = message; renderSession(); } });
+      const host = await openHost({ onMessage, onClose, onStatus });
+      if (disposed) return host.close();
       closePeer = host.close;
-      link = `${location.origin}${location.pathname}#join=${encodeURIComponent(host.id)}`;
+      link = `${location.href.split('#')[0]}#join=${encodeURIComponent(host.id)}`;
       session = new Session(hand);
       session.join(HOST_ID, name);
       renderSession();
     } catch (e) {
+      if (disposed) return;
       renderSetup(`${e.message} Réessaie.`);
     }
   }
 
+  function onStatus(message) {
+    if (disposed) return;
+    banner = message ?? '';
+    renderSession();
+  }
+
   function onMessage(conn, msg) {
+    if (disposed) return;
     if (msg?.type === 'join' && typeof msg.clientId === 'string' && msg.clientId.startsWith('c-') && typeof msg.name === 'string') {
-      const p = session.join(msg.clientId, msg.name);
-      connsById.set(p.id, conn);
-      idsByConn.set(conn, p.id);
-      update();
+      onJoin(conn, msg.clientId, msg.name);
     } else if (msg?.type === 'vote') {
       const id = idsByConn.get(conn);
       if (id && session.vote(id, msg.option)) update();
     }
   }
 
+  function onJoin(conn, clientId, name) {
+    if (clientId.length > MAX_CLIENT_ID_LENGTH) return;
+    // Une seule identité par connexion.
+    const known = idsByConn.get(conn);
+    if (known && known !== clientId) return;
+    if (!session.participants.some((p) => p.id === clientId) && session.participants.length >= MAX_PARTICIPANTS) {
+      conn.send({ type: 'bye', reason: 'full' });
+      return;
+    }
+    // Onglet dupliqué : la nouvelle connexion remplace l'ancienne.
+    const old = connsById.get(clientId);
+    if (old && old !== conn && old.open) {
+      old.send({ type: 'bye', reason: 'replaced' });
+      idsByConn.delete(old);
+      setTimeout(() => old.close(), CLOSE_DELAY_MS);
+    }
+    const p = session.join(clientId, name);
+    connsById.set(p.id, conn);
+    idsByConn.set(conn, p.id);
+    update();
+  }
+
   function onClose(conn) {
+    if (disposed) return;
     const id = idsByConn.get(conn);
     idsByConn.delete(conn);
     if (id && connsById.get(id) === conn) {
@@ -106,6 +145,7 @@ export function mountHost(root) {
   }
 
   function update() {
+    if (disposed) return;
     for (const [id, conn] of connsById) if (conn.open) conn.send(session.view(id));
     renderSession();
   }

@@ -5,6 +5,7 @@ import { mountVoter } from './voter.js';
 const root = document.getElementById('app');
 const ROUTES = { editor: mountEditor, host: mountHost, voter: mountVoter };
 let cleanup = null;
+let currentHash = location.hash;
 
 function show(name, arg) {
   const mount = ROUTES[name];
@@ -44,9 +45,15 @@ function renderHome() {
 }
 
 function route() {
+  const hash = location.hash;
+  if (cleanup?.confirmLeave?.() && !confirm('Quitter la session en cours ? Les votants seront déconnectés.')) {
+    // Rétablit l'adresse précédente sans déclencher hashchange.
+    history.replaceState(null, '', currentHash || location.pathname + location.search);
+    return;
+  }
   cleanup?.();
   cleanup = null;
-  const hash = location.hash;
+  currentHash = hash;
   if (hash.startsWith('#join=')) {
     let id;
     try {

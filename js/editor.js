@@ -158,7 +158,7 @@ export function mountEditor(root) {
       const input = e.target;
       const file = input.files[0];
       if (!file) return;
-      if (hand.actions.length && !confirm('Remplacer la main en cours ?')) {
+      if ((hand.title.trim() || hand.setup.seats.some((s) => s.cards)) && !confirm('Remplacer la main en cours ?')) {
         input.value = '';
         return;
       }

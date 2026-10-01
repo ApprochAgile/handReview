@@ -94,6 +94,7 @@ export function mountVoter(root, hostId) {
       renderTable(root.querySelector('[data-table]'), { hand: view.hand, state });
       renderVotePanel(root.querySelector('[data-vote]'), {
         ...view,
+        disabled: status.kind !== 'connected',
         onVote: (option) => link.send({ type: 'vote', option }),
       });
     }

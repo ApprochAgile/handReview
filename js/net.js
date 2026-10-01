@@ -3,6 +3,10 @@ import { randomId } from './dom.js';
 // Couche mince autour de PeerJS (chargé en global par index.html).
 export const MAX_ATTEMPTS = 5;
 const RETRY_MS = 2000;
+const CONNECT_TIMEOUT_MS = 15000;
+const RECONNECT_MIN_MS = 2000;
+const RECONNECT_MAX_MS = 16000;
+const TRANSIENT_ERRORS = new Set(['network', 'socket-error', 'socket-closed', 'server-error', 'disconnected']);
 const PEER_OPTIONS = { debug: 0 };
 const PEER_MISSING = 'Bibliothèque PeerJS non chargée. Vérifie ta connexion internet.';
 
@@ -23,14 +27,27 @@ function describeError(err) {
 }
 
 // Côté hôte. Résout avec { id, close } une fois enregistré auprès du serveur PeerJS.
-export function openHost({ onMessage, onClose, onError }) {
+// onStatus(message) signale une perte de signalisation, onStatus(null) son retour.
+export function openHost({ onMessage, onClose, onStatus }) {
   return new Promise((resolve, reject) => {
     if (typeof Peer === 'undefined') return reject(new Error(PEER_MISSING));
     const peer = new Peer(randomId('pkr-'), PEER_OPTIONS);
     let opened = false;
+    let closing = false;
+    let reconnectTimer = null;
+    let reconnectDelay = RECONNECT_MIN_MS;
+
+    const shutdown = () => {
+      closing = true;
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+      peer.destroy();
+    };
     peer.on('open', (id) => {
+      reconnectDelay = RECONNECT_MIN_MS;
+      if (opened) return onStatus(null);
       opened = true;
-      resolve({ id, close: () => peer.destroy() });
+      resolve({ id, close: shutdown });
     });
     peer.on('connection', (conn) => {
       conn.on('data', (msg) => onMessage(conn, msg));
@@ -39,15 +56,22 @@ export function openHost({ onMessage, onClose, onError }) {
     });
     peer.on('disconnected', () => {
       // Perte du serveur de signalisation : les connexions existantes continuent.
-      if (!peer.destroyed) peer.reconnect();
+      if (closing || peer.destroyed || reconnectTimer) return;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        if (closing || peer.destroyed || !peer.disconnected) return;
+        peer.reconnect();
+      }, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
     });
     peer.on('error', (err) => {
+      if (closing) return;
       const message = describeError(err);
       if (!opened) {
-        peer.destroy();
+        shutdown();
         reject(new Error(message));
       } else {
-        onError(message);
+        onStatus(message);
       }
     });
   });
@@ -65,53 +89,107 @@ export function joinHost(hostId, { hello, onMessage, onStatus }) {
   let attempts = 0;
   let everConnected = false;
   let stopped = false;
+  let retryTimer = null;
+  let connectTimer = null;
+  let reconnectTimer = null;
 
   const stop = (status) => {
     if (stopped) return;
     stopped = true;
+    clearTimeout(retryTimer);
+    clearTimeout(connectTimer);
+    clearTimeout(reconnectTimer);
     onStatus(status);
     peer.destroy();
   };
   const scheduleRetry = () => {
-    if (stopped) return;
+    // Un seul essai en attente à la fois.
+    if (stopped || retryTimer) return;
     attempts++;
-    if (attempts > MAX_ATTEMPTS) return stop({ kind: 'ended', message: 'Session terminée : hôte déconnecté.' });
+    if (attempts > MAX_ATTEMPTS) {
+      const message = everConnected ? 'Session terminée : hôte déconnecté.' : "Impossible de joindre l'hôte.";
+      return stop({ kind: 'ended', message });
+    }
     onStatus({ kind: 'reconnecting', attempt: attempts });
-    setTimeout(connect, RETRY_MS);
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      connect();
+    }, RETRY_MS);
   };
   function connect() {
-    if (stopped) return;
+    if (stopped || conn?.open) return;
+    clearTimeout(retryTimer);
+    clearTimeout(connectTimer);
+    retryTimer = connectTimer = null;
+    // Abandonne une éventuelle tentative précédente encore en cours.
+    const previous = conn;
+    conn = null;
+    previous?.close();
+    if (peer.disconnected) {
+      // La connexion vers l'hôte sera relancée sur 'open'.
+      if (!peer.destroyed) peer.reconnect();
+      return;
+    }
     const c = peer.connect(hostId, { reliable: true });
+    if (!c) return scheduleRetry();
     conn = c;
     let lost = false;
     const onLost = () => {
       if (lost || c !== conn) return;
       lost = true;
+      clearTimeout(connectTimer);
+      connectTimer = null;
       scheduleRetry();
     };
+    connectTimer = setTimeout(() => {
+      connectTimer = null;
+      if (c.open) return;
+      onLost();
+      c.close();
+    }, CONNECT_TIMEOUT_MS);
     c.on('open', () => {
+      if (stopped || c !== conn) return;
+      clearTimeout(connectTimer);
+      connectTimer = null;
       everConnected = true;
       attempts = 0;
       onStatus({ kind: 'connected' });
       c.send(hello());
     });
     c.on('data', (msg) => {
-      if (msg?.type === 'bye') return stop({ kind: 'ended', message: "Session terminée par l'hôte." });
+      if (c !== conn) return;
+      if (msg?.type === 'bye') {
+        if (msg.reason === 'replaced') return stop({ kind: 'ended', message: 'Session ouverte dans un autre onglet.' });
+        if (msg.reason === 'full') return stop({ kind: 'ended', message: 'Session complète.' });
+        return stop({ kind: 'ended', message: "Session terminée par l'hôte." });
+      }
       onMessage(msg);
     });
     c.on('close', onLost);
     c.on('error', onLost);
   }
 
-  peer.on('open', connect);
+  peer.on('open', () => {
+    if (!conn?.open) connect();
+  });
   peer.on('disconnected', () => {
-    if (!stopped && !peer.destroyed) peer.reconnect();
+    if (stopped || peer.destroyed || reconnectTimer) return;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      if (stopped || peer.destroyed || !peer.disconnected) return;
+      peer.reconnect();
+    }, RETRY_MS);
   });
   peer.on('error', (err) => {
     if (stopped) return;
     if (err.type === 'peer-unavailable' && everConnected) {
       conn = null;
       return scheduleRetry();
+    }
+    if (TRANSIENT_ERRORS.has(err.type) && everConnected) {
+      // Si la connexion vers l'hôte tient encore, seule la signalisation est perdue.
+      if (!conn?.open) scheduleRetry();
+      return;
     }
     stop({ kind: 'error', message: describeError(err) });
   });
