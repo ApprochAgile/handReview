@@ -17,9 +17,11 @@ function backHtml(known) {
 }
 
 function holeCards(seat, st, hideVillainCards) {
-  if (st.folded) return '';
   const cards = parseCards(seat.cards);
-  if (cards.length && (seat.hero || !hideVillainCards)) return cards.map(cardHtml).join('');
+  const visible = cards.length > 0 && (seat.hero || !hideVillainCards);
+  // Un joueur couché n'a plus de cartes, sauf si elles sont révélées (fin de main).
+  if (st.folded) return visible ? cards.map(cardHtml).join('') : '';
+  if (visible) return cards.map(cardHtml).join('');
   return backHtml(cards.length > 0) + backHtml(cards.length > 0);
 }
 
