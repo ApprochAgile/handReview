@@ -141,3 +141,45 @@ test('heads-up : SB à tapis en postant, la BB ne peut que checker', () => {
   assert.equal(end.handOver, true);
   assert.equal(end.showdown, true);
 });
+
+test('3 joueurs : la BB garde son option après deux calls', () => {
+  const s = computeState(setupOf([15, 15, 15]), [{ seat: 0, type: 'call' }, { seat: 1, type: 'call' }]);
+  assert.equal(s.toAct, 2);
+  assert.deepEqual(types(legalActions(s)), ['check', 'raise', 'allin']);
+});
+
+test('postflop : bet, raise, call', () => {
+  const s = computeState(setupOf([20, 20]), [
+    { seat: 0, type: 'call' },
+    { seat: 1, type: 'check' },
+    { seat: 1, type: 'bet', amount: 2 },
+    { seat: 0, type: 'raise', amount: 6 },
+    { seat: 1, type: 'call' },
+  ]);
+  assert.equal(s.street, 'turn');
+  assert.equal(s.seats[0].stack, 13);
+  assert.equal(s.seats[1].stack, 13);
+  assert.equal(totalPot(s), 14);
+  assert.equal(s.toAct, 1);
+});
+
+test('turn, river puis showdown sur des checks', () => {
+  const actions = [{ seat: 0, type: 'call' }, { seat: 1, type: 'check' }];
+  for (let i = 0; i < 3; i++) actions.push({ seat: 1, type: 'check' }, { seat: 0, type: 'check' });
+  const s = computeState(setupOf([10, 10]), actions);
+  assert.equal(s.handOver, true);
+  assert.equal(s.showdown, true);
+  assert.deepEqual(requiredBoard(s), { flop: true, turn: true, river: true });
+});
+
+test('all-in multiway : un joueur doit encore suivre', () => {
+  const setup = setupOf([10, 30, 30]);
+  const s1 = computeState(setup, [{ seat: 0, type: 'allin' }]);
+  assert.equal(s1.toAct, 1);
+  assert.deepEqual(types(legalActions(s1)), ['fold', 'call', 'raise', 'allin']);
+  const s2 = computeState(setup, [{ seat: 0, type: 'allin' }, { seat: 1, type: 'call' }]);
+  assert.equal(s2.toAct, 2);
+  const s3 = computeState(setup, [{ seat: 0, type: 'allin' }, { seat: 1, type: 'call' }, { seat: 2, type: 'call' }]);
+  assert.equal(s3.street, 'flop');
+  assert.equal(s3.toAct, 1);
+});

@@ -92,3 +92,42 @@ test('publicHand : tout révélé à la fin', () => {
   assert.equal(p.setup.seats[1].cards, null);
   assert.deepEqual(p.board, { flop: 'Kc7h2s', turn: '9d', river: '4c' });
 });
+
+test('validateHand : hero doit être un booléen', () => {
+  const h = sampleHand();
+  h.setup.seats[1].hero = 'false';
+  assert.match(validateHand(h), /hero invalide/);
+});
+
+test('publicHand : liste blanche des champs', () => {
+  const h = sampleHand();
+  h.setup.seats[1].note = 'il a KK';
+  h.setup.extra = 1;
+  const p = publicHand(h, 0, false);
+  assert.equal('note' in p.setup.seats[1], false);
+  assert.equal('extra' in p.setup, false);
+});
+
+test('validateHand : entrées malformées et montants', () => {
+  const h1 = sampleHand();
+  h1.setup.seats[1] = null;
+  assert.match(validateHand(h1), /Siège 2 : siège invalide/);
+
+  const h2 = sampleHand();
+  h2.actions[1] = null;
+  assert.match(validateHand(h2), /Action 2 : action invalide/);
+
+  const h3 = sampleHand();
+  h3.actions[0].amount = '2';
+  assert.match(validateHand(h3), /Action 1 : montant invalide/);
+
+  const h4 = sampleHand();
+  h4.actions[1] = { seat: 1, type: 'fold', amount: 3 };
+  assert.match(validateHand(h4), /Action 2 : montant inattendu/);
+
+  const h5 = sampleHand();
+  h5.setup.seats[2].stack = 0.001;
+  assert.match(validateHand(h5), /Siège 3 : stack invalide/);
+
+  assert.equal(validateHand(sampleHand()), null);
+});

@@ -108,3 +108,32 @@ test('view : tout est révélé à la fin', () => {
   assert.equal(v.hand.setup.seats[2].cards, 'QsQc');
   assert.equal(v.hand.board.river, '4c');
 });
+
+test('join : pseudo absent -> Anonyme', () => {
+  const s = new Session(sampleHand());
+  assert.equal(s.join('c-x', undefined).name, 'Anonyme');
+});
+
+test('vote : refusé pour un inconnu ou un participant déconnecté', () => {
+  const s = new Session(sampleHand());
+  s.join('c-a', 'Max');
+  s.start();
+  s.tick();
+  assert.equal(s.vote('c-inconnu', 0), false);
+  s.leave('c-a');
+  assert.equal(s.vote('c-a', 0), false);
+});
+
+test('view : le dénominateur inclut les votes des déconnectés', () => {
+  const s = new Session(sampleHand());
+  s.join('c-a', 'A');
+  s.join('c-b', 'B');
+  s.start();
+  s.tick();
+  assert.equal(s.vote('c-a', 0), true);
+  s.leave('c-a');
+  s.leave('c-b');
+  const v = s.view('c-a');
+  assert.equal(v.voteCount, 1);
+  assert.equal(v.voterCount, 1);
+});

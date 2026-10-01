@@ -10,6 +10,11 @@ function fail(message) {
   throw new Error(message);
 }
 
+// Montant en BB : nombre fini > 0, au centième près.
+function isAmount(x) {
+  return typeof x === 'number' && Number.isFinite(x) && x > 0 && Math.abs(x * 100 - Math.round(x * 100)) < 1e-9;
+}
+
 // Retourne null si la main est valide, sinon le message du premier problème.
 export function validateHand(hand) {
   try {
@@ -51,9 +56,11 @@ function check(hand) {
   let heroes = 0;
   setup.seats.forEach((seat, i) => {
     const label = `Siège ${i + 1}`;
+    if (!seat || typeof seat !== 'object') fail(`${label} : siège invalide.`);
     if (seat.position !== positions[i]) fail(`${label} : position attendue ${positions[i]}.`);
     if (typeof seat.name !== 'string' || !seat.name.trim()) fail(`${label} : nom manquant.`);
-    if (typeof seat.stack !== 'number' || !(seat.stack > 0)) fail(`${label} : stack invalide.`);
+    if (!isAmount(seat.stack)) fail(`${label} : stack invalide.`);
+    if (seat.hero !== undefined && typeof seat.hero !== 'boolean') fail(`${label} : champ hero invalide.`);
     if (seat.hero === true) {
       heroes++;
       addCards(seat.cards, 2, `${label} (Hero)`);
@@ -65,6 +72,14 @@ function check(hand) {
 
   if (!Array.isArray(hand.actions)) fail("Liste d'actions manquante.");
   hand.actions.forEach((action, k) => {
+    const label = `Action ${k + 1}`;
+    if (!action || typeof action !== 'object') fail(`${label} : action invalide.`);
+    if (!Number.isInteger(action.seat) || action.seat < 0 || action.seat >= setup.players) fail(`${label} : siège invalide.`);
+    if (action.type === 'bet' || action.type === 'raise') {
+      if (!isAmount(action.amount)) fail(`${label} : montant invalide.`);
+    } else if (action.amount !== undefined) {
+      fail(`${label} : montant inattendu.`);
+    }
     if (action.vote !== undefined) checkVote(action.vote, k);
   });
   let state;
@@ -130,6 +145,12 @@ export function publicHand(hand, cursor, reveal) {
   const required = requiredBoard(computeState(hand.setup, actions));
   const board = {};
   for (const street of ['flop', 'turn', 'river']) board[street] = required[street] ? hand.board?.[street] ?? null : null;
-  const seats = hand.setup.seats.map((s) => ({ ...s, cards: s.hero || reveal ? s.cards ?? null : null }));
-  return { version: hand.version, title: hand.title, setup: { ...hand.setup, seats }, board, actions };
+  const seats = hand.setup.seats.map((s) => ({
+    name: s.name,
+    position: s.position,
+    stack: s.stack,
+    hero: s.hero === true,
+    cards: s.hero === true || reveal ? s.cards ?? null : null,
+  }));
+  return { version: hand.version, title: hand.title, setup: { players: hand.setup.players, seats }, board, actions };
 }

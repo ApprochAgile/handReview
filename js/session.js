@@ -16,7 +16,7 @@ export class Session {
   }
 
   join(clientId, wantedName) {
-    const name = String(wantedName).trim().slice(0, MAX_NAME_LENGTH) || 'Anonyme';
+    const name = String(wantedName ?? '').trim().slice(0, MAX_NAME_LENGTH) || 'Anonyme';
     let p = this.participants.find((x) => x.id === clientId);
     if (!p) {
       p = this.participants.find((x) => x.name === name && !x.connected);
@@ -73,6 +73,7 @@ export class Session {
 
   vote(clientId, option) {
     if (this.phase !== 'voting') return false;
+    if (!this.participants.some((p) => p.id === clientId && p.connected)) return false;
     if (!Number.isInteger(option) || option < 0 || option >= this.currentVote().options.length) return false;
     this.votes.set(clientId, option);
     return true;
@@ -103,7 +104,7 @@ export class Session {
       vote: vote ? { question: vote.question ?? '', options: [...vote.options] } : null,
       participants: this.participants.map((p) => ({ name: p.name, connected: p.connected })),
       voteCount: this.votes.size,
-      voterCount: this.participants.filter((p) => p.connected).length,
+      voterCount: this.participants.filter((p) => p.connected || this.votes.has(p.id)).length,
       you: this.participants.find((p) => p.id === clientId)?.name ?? null,
       myVote: this.votes.has(clientId) ? this.votes.get(clientId) : null,
       results: this.phase === 'revealed' ? this.results : null,
