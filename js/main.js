@@ -45,7 +45,15 @@ function route() {
   cleanup?.();
   cleanup = null;
   const hash = location.hash;
-  if (hash.startsWith('#join=')) return show('voter', decodeURIComponent(hash.slice('#join='.length)));
+  if (hash.startsWith('#join=')) {
+    let id;
+    try {
+      id = decodeURIComponent(hash.slice('#join='.length));
+    } catch {
+      return renderHome();
+    }
+    return show('voter', id);
+  }
   if (hash === '#edit') return show('editor');
   if (hash === '#host') return show('host');
   renderHome();

@@ -3,7 +3,7 @@ import { parseCards } from './cards.js';
 import { esc } from './dom.js';
 
 const SUIT_SYMBOLS = { s: '♠', h: '♥', d: '♦', c: '♣' };
-const ACTION_LABELS = { fold: 'Fold', check: 'Check', call: 'Call', bet: 'Bet', raise: 'Raise', allin: 'All-in' };
+export const ACTION_LABELS = { fold: 'Fold', check: 'Check', call: 'Call', bet: 'Bet', raise: 'Raise', allin: 'All-in' };
 const fmt = (x) => String(Math.round(x * 100) / 100);
 
 export function cardHtml(card) {

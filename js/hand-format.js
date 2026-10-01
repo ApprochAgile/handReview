@@ -11,7 +11,7 @@ function fail(message) {
 }
 
 // Montant en BB : nombre fini > 0, au centième près.
-function isAmount(x) {
+export function isAmount(x) {
   return typeof x === 'number' && Number.isFinite(x) && x > 0 && Math.abs(x * 100 - Math.round(x * 100)) < 1e-9;
 }
 

@@ -4,8 +4,10 @@ import { esc } from './dom.js';
 
 // Ouvre une modale de choix de `count` cartes. Résout avec la liste des cartes
 // choisies, ou null si l'utilisateur annule. Les cartes de `used` sont grisées.
-export function pickCards({ count, used = new Set(), title = 'Choisir des cartes' }) {
+export function pickCards({ count, used = new Set(), title = 'Choisir des cartes', signal }) {
   return new Promise((resolve) => {
+    if (signal?.aborted) return resolve(null);
+    const app = document.getElementById('app');
     const selected = [];
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -33,10 +35,13 @@ export function pickCards({ count, used = new Set(), title = 'Choisir des cartes
     };
     const close = (value) => {
       document.removeEventListener('keydown', onKey);
+      signal?.removeEventListener('abort', onAbort);
+      if (app) app.inert = false;
       overlay.remove();
       resolve(value);
     };
     const onKey = (e) => { if (e.key === 'Escape') close(null); };
+    const onAbort = () => close(null);
 
     overlay.addEventListener('click', (e) => {
       const pick = e.target.closest('[data-card]');
@@ -53,7 +58,10 @@ export function pickCards({ count, used = new Set(), title = 'Choisir des cartes
       }
     });
     document.addEventListener('keydown', onKey);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (app) app.inert = true;
     document.body.append(overlay);
     refresh();
+    overlay.querySelector('.pick:not(:disabled)')?.focus();
   });
 }

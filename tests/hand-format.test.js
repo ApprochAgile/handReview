@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateHand, parseHand, serializeHand, fileNameFor, publicHand } from '../js/hand-format.js';
+import { validateHand, parseHand, serializeHand, fileNameFor, publicHand, isAmount } from '../js/hand-format.js';
 import { sampleHand } from './fixtures.js';
 
 test('validateHand : main valide', () => {
@@ -130,4 +130,9 @@ test('validateHand : entrées malformées et montants', () => {
   assert.match(validateHand(h5), /Siège 3 : stack invalide/);
 
   assert.equal(validateHand(sampleHand()), null);
+});
+
+test('isAmount : montants au centième', () => {
+  for (const ok of [2, 12.5, 0.01]) assert.equal(isAmount(ok), true);
+  for (const ko of [2.555, 0, '2', NaN]) assert.equal(isAmount(ko), false);
 });
