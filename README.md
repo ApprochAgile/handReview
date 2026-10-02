@@ -31,6 +31,6 @@ Node 22+, aucune dépendance à installer.
 
 ## Déployer (gratuit)
 
-Le dossier est un site statique : GitHub Pages (Settings → Pages → branche `master`, dossier racine)
+Le dossier est un site statique : GitHub Pages (Settings → Pages → branche `main`, dossier racine)
 ou Netlify (glisser-déposer le dossier). La mise en relation passe par le serveur public gratuit de PeerJS ;
 les votes transitent directement entre navigateurs et ne sont stockés nulle part.
